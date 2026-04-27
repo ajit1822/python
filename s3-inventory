@@ -1,0 +1,69 @@
+import boto3
+import csv
+import io
+import json
+import uuid
+from botocore.exceptions import ClientError
+
+s3 = boto3.client('s3')
+s3control = boto3.client('s3control')
+region = boto3.session.Session().region_name
+
+# Destination for the CSV output
+DEST_BUCKET = 'hl-sandbox-test'
+DEST_PREFIX = 'ajit/'
+
+def lambda_handler(event=None, context=None):
+    s3_resource = boto3.resource('s3')
+    buckets = s3.list_buckets()
+
+    csv_buffer = io.StringIO()
+    writer = csv.writer(csv_buffer)
+    writer.writerow(['BucketName', 'CreationDate', 'Tags'])
+
+    for bucket in buckets['Buckets']:
+        bucket_name = bucket['Name']
+        creation_date = bucket['CreationDate']
+
+        try:
+            # Try to get bucket tags
+            response = s3.get_bucket_tagging(Bucket=bucket_name)
+            tags = response['TagSet']
+		
+        except s3.exceptions.ClientError as e:
+            # No tags or access denied
+            tags = []
+        writer.writerow([bucket_name, creation_date, tags])
+        # if tags:
+        #     for tag in tags:
+        #         writer.writerow([bucket_name, creation_date, tag['Key'], tag['Value']])
+        # else:
+        #     writer.writerow([bucket_name, creation_date, '', ''])
+
+    # Generate unique file name
+    file_key = f"{DEST_PREFIX}bucket_inventory_{uuid.uuid4()}.csv"
+
+    # Upload to S3
+    s3.put_object(
+        Bucket=DEST_BUCKET,
+        Key=file_key,
+        Body=csv_buffer.getvalue()
+    )
+
+    # Generate pre-signed URL
+    try:
+        presigned_url = s3.generate_presigned_url(
+            'get_object',
+            Params={'Bucket': DEST_BUCKET, 'Key': file_key},
+            ExpiresIn=3600  # 1 hour
+        )
+    except ClientError as e:
+        return {"statusCode": 500, "body": f"Error generating pre-signed URL: {e}"}
+
+    return {
+        "statusCode": 200,
+        "body": {
+            "message": "S3 bucket inventory CSV generated successfully.",
+            "download_url": presigned_url
+        }
+    }
