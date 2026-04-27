@@ -1,0 +1,31 @@
+import boto3
+def lambda_handler(event, context):
+   eks_client = boto3.client('eks')
+   # List of clusters and their node groups to update
+   clusters_nodegroups = [
+       {'cluster_name': 'watermelon-uat-eks', 'nodegroup_name': 'watermelon-uat-eks-ng-02', 'req_node':6},
+       #{'cluster_name': 'cluster-2', 'nodegroup_name': 'nodegroup-b'},
+       # Add more cluster-nodegroup pairs as needed
+   ]
+   results = []
+   for item in clusters_nodegroups:
+       cluster_name = item['cluster_name']
+       nodegroup_name = item['nodegroup_name']
+       req_node = item['req_node']
+       try:
+           response = eks_client.update_nodegroup_config(
+               clusterName=cluster_name,
+               nodegroupName=nodegroup_name,
+               scalingConfig={
+                   'desiredSize': req_node,
+                   'minSize': req_node,
+                   'maxSize': req_node
+               }
+           )
+           results.append({'cluster': cluster_name, 'nodegroup': nodegroup_name, 'status': 'Success'})
+       except Exception as e:
+           results.append({'cluster': cluster_name, 'nodegroup': nodegroup_name, 'status': f'Failed: {str(e)}'})
+   return {
+       'statusCode': 200,
+       'body': results
+   }
